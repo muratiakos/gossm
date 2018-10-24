@@ -35,9 +35,11 @@ func AwsSession(profile, region string) *session.Session {
 	return sess
 }
 
-func doit(sess *session.Session, shellType, command, bucket string, timeout int64, tagPairs, instanceIds []string) {
+func doit(sess *session.Session, shellType, command, bucket string, quiet bool, timeout int64, tagPairs, instanceIds []string) {
 	client := gossm.New(sess)
+
 	printer := printer.New()
+	printer.Quiet = quiet
 
 	docName := "AWS-RunShellScript"
 	if shellType == "powershell" {
@@ -62,7 +64,7 @@ func doit(sess *session.Session, shellType, command, bucket string, timeout int6
 		panic(err)
 	}
 
-	printer.PrintInfo(resp)
+	printer.PrintInfo(command, resp)
 
 	for msg := range resp.Channel {
 		printer.Print(msg)

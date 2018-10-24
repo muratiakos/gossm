@@ -37,7 +37,7 @@ var RootCmd = &cobra.Command{
 			shell = "powershell"
 		}
 
-		doit(sess, shell, command, bucket, timeout, tagPairs, instanceIds)
+		doit(sess, shell, command, bucket, quiet, timeout, tagPairs, instanceIds)
 	},
 }
 

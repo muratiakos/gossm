@@ -2,6 +2,7 @@ package gossm
 
 import (
 	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
@@ -80,7 +81,14 @@ func (c *Client) getFromS3Url(urlString string) (*string, error) {
 		Bucket: &bucket,
 		Key:    &key,
 	})
-	if err != nil { return nil, err }
+	if err != nil {
+		if awsErr, ok := err.(awserr.Error); ok {
+			if awsErr.Code() == s3.ErrCodeNoSuchKey {
+				return nil, nil
+			}
+		}
+		return nil, err
+	}
 
 	str := string(buff.Bytes())
 	return &str, nil
@@ -182,6 +190,7 @@ func (c *Client) poll(commandId *string, resp *DoitResponse) {
 
 		if err != nil {
 			quit(err)
+			return
 		}
 
 		for _, invocation := range resp3.CommandInvocations {
@@ -192,8 +201,8 @@ func (c *Client) poll(commandId *string, resp *DoitResponse) {
 				continue
 			}
 
-			if *invocation.Status != "InProgress" {
-				time.Sleep(time.Second * 3)
+			if *invocation.Status != ssm.CommandInvocationStatusInProgress {
+				time.Sleep(time.Second * 1)
 
 				msg := SsmMessage{
 					CommandId: *commandId,
@@ -203,6 +212,7 @@ func (c *Client) poll(commandId *string, resp *DoitResponse) {
 				stdout, err := c.getFromS3Url(*invocation.StandardOutputUrl)
 				if err != nil {
 					quit(err)
+					return
 				}
 				if stdout != nil {
 					msg.StdoutChunk = *stdout
@@ -211,6 +221,7 @@ func (c *Client) poll(commandId *string, resp *DoitResponse) {
 				stderr, err := c.getFromS3Url(*invocation.StandardErrorUrl)
 				if err != nil {
 					quit(err)
+					return
 				}
 				if stderr != nil {
 					msg.StderrChunk = *stderr
@@ -219,18 +230,14 @@ func (c *Client) poll(commandId *string, resp *DoitResponse) {
 				if len(msg.StdoutChunk) > 0 || len(msg.StderrChunk) > 0 {
 					msg.InstanceDone = true
 					resp.Channel <- msg
+					printedInstanceIds = append(printedInstanceIds, instanceId)
 				}
-
-				//if !quiet {
-				//	colour := color.New(color.FgBlue)
-				//	message := fmt.Sprintf("%s: %s", *invocation.Status, *invocation.StatusDetails)
-				//	printFormattedOutput(colour.Sprint(prefix), message)
-				//}
 			}
 		}
 
 		if len(printedInstanceIds) == expectedResponseCount {
-			break
+			close(resp.Channel)
+			return
 		}
 	}
 
