@@ -20,7 +20,6 @@ type Client struct {
 	ssmApi ssmiface.SSMAPI
 	ec2Api ec2iface.EC2API
 	s3Api s3iface.S3API
-	bucket string
 }
 
 type CommandInstanceIdsOutput struct {
@@ -35,20 +34,20 @@ type SsmMessage struct {
 	StdoutChunk string
 	StderrChunk string
 	Error error
-	//InstanceDone bool
+	InstanceDone bool
 }
 
 type DoitResponse struct {
-	Channels []chan SsmMessage
+	Channel chan SsmMessage
+	CommandId string
 	InstanceIds CommandInstanceIdsOutput
 }
 
-func New(sess *session.Session, bucket string) *Client {
+func New(sess *session.Session) *Client {
 	return &Client{
 		ssmApi: ssm.New(sess),
 		ec2Api: ec2.New(sess),
 		s3Api: s3.New(sess),
-		bucket: bucket,
 	}
 }
 
@@ -155,13 +154,9 @@ func (c *Client) Doit(commandInput *ssm.SendCommandInput) (*DoitResponse, error)
 	commandId := resp.Command.CommandId
 	instanceIds := c.commandInstanceIds(*commandId)
 
-	channels := []chan SsmMessage{}
-	for range instanceIds.InstanceIds {
-		channels = append(channels, make(chan SsmMessage))
-	}
-
 	response := &DoitResponse{
-		Channels: channels,
+		Channel: make(chan SsmMessage),
+		CommandId: *commandId,
 		InstanceIds: instanceIds,
 	}
 
@@ -172,18 +167,12 @@ func (c *Client) Doit(commandInput *ssm.SendCommandInput) (*DoitResponse, error)
 func (c *Client) poll(commandId *string, resp *DoitResponse) {
 	printedInstanceIds := []string{}
 	instanceIds := resp.InstanceIds
-	channels := resp.Channels
 	expectedResponseCount := len(instanceIds.InstanceIds) - len(instanceIds.FaultyInstanceIds) - len(instanceIds.WrongPlatformInstanceIds)
 
 	for {
 		quit := func(err error) {
-			for idx, instanceId := range instanceIds.InstanceIds {
-				if !stringInSlice(instanceId, printedInstanceIds) {
-					ch := channels[idx]
-					ch <- SsmMessage{Error: err}
-					close(ch)
-				}
-			}
+			resp.Channel <- SsmMessage{Error: err}
+			close(resp.Channel)
 		}
 
 		time.Sleep(time.Second * 3)
@@ -206,10 +195,6 @@ func (c *Client) poll(commandId *string, resp *DoitResponse) {
 			if *invocation.Status != "InProgress" {
 				time.Sleep(time.Second * 3)
 
-				//prefix := fmt.Sprintf("[%d/%d %s] ", len(printedInstanceIds) + 1, expectedResponseCount, instanceId)
-				//
-				//colourIdx := len(printedInstanceIds) % 2
-
 				msg := SsmMessage{
 					CommandId: *commandId,
 					InstanceId: instanceId,
@@ -221,8 +206,6 @@ func (c *Client) poll(commandId *string, resp *DoitResponse) {
 				}
 				if stdout != nil {
 					msg.StdoutChunk = *stdout
-					//colour := stdoutColours[colourIdx]
-					//printFormattedOutput(colour.Sprint(prefix), *stdout)
 				}
 
 				stderr, err := c.getFromS3Url(*invocation.StandardErrorUrl)
@@ -231,20 +214,11 @@ func (c *Client) poll(commandId *string, resp *DoitResponse) {
 				}
 				if stderr != nil {
 					msg.StderrChunk = *stderr
-					//colour := stderrColours[colourIdx]
-					//printFormattedOutput(colour.Sprint(prefix), *stderr)
 				}
 
 				if len(msg.StdoutChunk) > 0 || len(msg.StderrChunk) > 0 {
-					for idx, id := range instanceIds.InstanceIds {
-						if instanceId == id {
-							ch := channels[idx]
-							ch <- msg
-							close(ch)
-							printedInstanceIds = append(printedInstanceIds, instanceId)
-
-						}
-					}
+					msg.InstanceDone = true
+					resp.Channel <- msg
 				}
 
 				//if !quiet {

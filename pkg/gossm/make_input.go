@@ -40,24 +40,6 @@ func MakeTargets(tagPairs, instanceIds []string) []*ssm.Target {
 	return targets
 }
 
-func MakeCommandInput(targets []*ssm.Target, bucket, keyPrefix, command, shellType string, timeout int64) *ssm.SendCommandInput {
-	docName := "AWS-RunShellScript"
-	if shellType == "powershell" {
-		docName = "AWS-RunPowerShellScript"
-	}
-
-	return &ssm.SendCommandInput{
-		DocumentName: &docName,
-		Targets: targets,
-		TimeoutSeconds: &timeout,
-		OutputS3BucketName: &bucket,
-		OutputS3KeyPrefix: &keyPrefix,
-		Parameters: map[string][]*string {
-			"commands": aws.StringSlice([]string{command}),
-		},
-	}
-}
-
 func RealBucketName(sess *session.Session, input string) string {
 	tmpl, err := template.New("bucket").Parse(input)
 	if err != nil { log.Panicf(err.Error()) }
