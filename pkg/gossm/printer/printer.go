@@ -2,8 +2,8 @@ package printer
 
 import (
 	"fmt"
-	"github.com/fatih/color"
 	"github.com/glassechidna/gossm/pkg/gossm"
+	"github.com/logrusorgru/aurora"
 	"github.com/mitchellh/go-wordwrap"
 	"github.com/nsf/termbox-go"
 	"io"
@@ -13,18 +13,18 @@ import (
 
 type Printer struct {
 	Out       io.Writer
-	outColors []*color.Color
+	outColors []aurora.Color
 	Err       io.Writer
-	errColors []*color.Color
+	errColors []aurora.Color
 	Quiet     bool
 }
 
 func New() *Printer {
 	return &Printer{
 		Out:       os.Stdout,
-		outColors: []*color.Color{color.New(color.FgGreen)},
+		outColors: []aurora.Color{aurora.GreenFg},
 		Err:       os.Stderr,
-		errColors: []*color.Color{color.New(color.FgRed)},
+		errColors: []aurora.Color{aurora.RedFg},
 		Quiet:     false,
 	}
 }
@@ -40,9 +40,12 @@ func (p *Printer) PrintInfo(command string, resp *gossm.DoitResponse) {
 
 func (p *Printer) printInfo(prefix, info string) {
 	if !p.Quiet {
-		faint := color.New(color.Faint)
-		blue := color.New(color.FgBlue)
-		_, _ = fmt.Fprintf(os.Stderr, "%s%s\n", blue.Sprintf("%s", prefix), faint.Sprintf("%s", info))
+		faint := aurora.GrayFg
+		blue := aurora.BlueFg
+		prefixstr := aurora.Colorize(prefix, blue).String()
+		infostr := aurora.Colorize(info, faint).String()
+		_, _ = fmt.Fprint(os.Stderr, prefixstr)
+		_, _ = fmt.Fprintln(os.Stderr, infostr)
 	}
 }
 
@@ -64,7 +67,7 @@ func (p *Printer) Print(msg gossm.SsmMessage) {
 	}
 }
 
-func (p *Printer) print(w io.Writer, prefixColor *color.Color, msg gossm.SsmMessage, payload string) {
+func (p *Printer) print(w io.Writer, prefixColor aurora.Color, msg gossm.SsmMessage, payload string) {
 	if p.Quiet {
 		_, _ = fmt.Fprintln(w, payload)
 		return
@@ -77,7 +80,7 @@ func (p *Printer) print(w io.Writer, prefixColor *color.Color, msg gossm.SsmMess
 		termbox.Close()
 	}
 
-	prefix := prefixColor.Sprintf("[%s] ", msg.InstanceId)
+	prefix := aurora.Colorize(fmt.Sprintf("[%s] ", msg.InstanceId), prefixColor).String()
 
 	outputWidth := windowWidth - len(prefix)
 	wrapped := wordwrap.WrapString(payload, uint(outputWidth))
