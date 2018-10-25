@@ -86,7 +86,9 @@ func (p *Printer) print(w io.Writer, prefixColor aurora.Color, msg gossm.SsmMess
 	wrapped := wordwrap.WrapString(payload, uint(outputWidth))
 	lines := strings.Split(wrapped, "\n")
 
-	for _, line := range lines {
-		_, _ = fmt.Fprintf(w, "%s%s\n", prefix, line)
+	for idx, line := range lines {
+		if !(len(line) == 0 && idx == len(lines)-1) {
+			_, _ = fmt.Fprintf(w, "%s%s\n", prefix, line)
+		}
 	}
 }
