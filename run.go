@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/credentials/stscreds"
@@ -27,6 +28,7 @@ func AwsSession(profile, region string) *session.Session {
 	}
 
 	sess, _ := session.NewSessionWithOptions(sessOpts)
+	//sess.Config.LogLevel = aws.LogLevel(aws.LogDebugWithHTTPBody)
 
 	if len(region) > 0 {
 		sess.Config.Region = &region
@@ -52,14 +54,17 @@ func doit(sess *session.Session, shellType, command, bucket string, quiet bool, 
 		DocumentName:       &docName,
 		Targets:            targets,
 		TimeoutSeconds:     &timeout,
-		OutputS3BucketName: &bucket,
+		CloudWatchOutputConfig: &ssm.CloudWatchOutputConfig{
+			CloudWatchOutputEnabled: aws.Bool(true),
+		},
+		//OutputS3BucketName: &bucket,
 		//OutputS3KeyPrefix: &keyPrefix,
 		Parameters: map[string][]*string{
 			"commands": aws.StringSlice([]string{command}),
 		},
 	}
 
-	resp, err := client.Doit(input)
+	resp, err := client.Doit(context.Background(), input)
 	if err != nil {
 		panic(err)
 	}
