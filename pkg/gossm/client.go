@@ -206,8 +206,12 @@ func (c *Client) pollLogs(ctx context.Context, output *ssm.SendCommandOutput, re
 		LogStreamNamePrefix: commandId,
 	}
 
-	var lastTimestamp int64
-	//lastTimestamps := map[string]int64{}
+	lastTimestamps := map[string]int64{}
+	for _, id := range resp.InstanceIds.InstanceIds {
+		lastTimestamps[id] = 0
+	}
+
+	seenEvents := map[string]bool{}
 
 	for {
 		time.Sleep(time.Second)
@@ -215,9 +219,13 @@ func (c *Client) pollLogs(ctx context.Context, output *ssm.SendCommandOutput, re
 		err := c.logsApi.FilterLogEventsPagesWithContext(ctx, input, func(page *cloudwatchlogs.FilterLogEventsOutput, lastPage bool) bool {
 			for _, event := range page.Events {
 				msg := logEventToSsmMessage(event)
-				resp.Channel <- msg
-				lastTimestamp = *event.Timestamp
-				//lastTimestamps
+
+				if _, ok := seenEvents[*event.EventId]; !ok {
+					resp.Channel <- msg
+					seenEvents[*event.EventId] = true
+				}
+
+				lastTimestamps[msg.InstanceId] = *event.Timestamp
 			}
 			return !lastPage
 		})
@@ -225,6 +233,12 @@ func (c *Client) pollLogs(ctx context.Context, output *ssm.SendCommandOutput, re
 			panic(err)
 		}
 
+		var lastTimestamp int64 = 2^62
+		for _, ts := range lastTimestamps {
+			if ts < lastTimestamp {
+				lastTimestamp = ts
+			}
+		}
 		lastTimestamp++
 		input.StartTime = &lastTimestamp
 
